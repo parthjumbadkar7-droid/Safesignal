@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>SafeSignal — Rapid Crisis Response</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -792,22 +794,14 @@ margin-bottom:0.5rem;
     <p>Emergency services within your area. Tap any location to get directions.</p>
   </div>
   <div class="nearby-container">
-    <div class="map-placeholder">
-      <div class="map-grid"></div>
-      <div class="map-pin user">📍</div>
-      <div class="map-pin h1">🏥</div>
-      <div class="map-pin h2">🏥</div>
-      <div class="map-pin p1">🚔</div>
-      <div class="map-pin p2">🚔</div>
-      <div class="map-pin f1">🚒</div>
-      <div class="map-status"><div class="status-dot"></div>GPS ACTIVE — LOCATING...</div>
-    </div>
+    <div id="leafletMap" style="width:100%;height:320px;border-radius:18px;border:1px solid rgba(255,255,255,0.07);margin-bottom:2rem;z-index:1;overflow:hidden;"></div>
+    <div class="map-status" id="mapStatus" style="position:relative;bottom:auto;left:auto;margin-bottom:1rem;display:inline-flex;"><div class="status-dot"></div><span id="mapStatusText">GPS ACTIVE — LOCATING...</span></div>
     <div class="filter-tabs">
-      <button class="filter-tab active">All</button>
-      <button class="filter-tab">🏥 Hospitals</button>
-      <button class="filter-tab">🚔 Police</button>
-      <button class="filter-tab">🚒 Fire Stations</button>
-      <button class="filter-tab">💊 Pharmacy</button>
+      <button class="filter-tab active" onclick="filterNearby(this,'hospital')">All</button>
+      <button class="filter-tab" onclick="filterNearby(this,'hospital')">🏥 Hospitals</button>
+      <button class="filter-tab" onclick="filterNearby(this,'police')">🚔 Police</button>
+      <button class="filter-tab" onclick="filterNearby(this,'fire_station')">🚒 Fire Stations</button>
+      <button class="filter-tab" onclick="filterNearby(this,'pharmacy')">💊 Pharmacy</button>
     </div>
     <div class="nearby-grid">
       <div class="nearby-card"><div class="nc-icon hosp">🏥</div><div class="nc-meta"><strong>City General Hospital</strong><span>Emergency — Open 24/7</span></div><div class="nc-dist">0.8 km</div></div>
@@ -998,40 +992,7 @@ margin-bottom:0.5rem;
 
     <div class="recent-reports-section">
       <h3>RECENT REPORTS</h3>
-      <div class="report-feed" id="reportFeed">
-        <div class="report-item">
-          <div class="ri-badge" style="background:var(--red)"></div>
-          <div class="ri-body">
-            <div class="ri-title">Heavy flooding near Peth Road</div>
-            <div class="ri-meta"><span>📍 2.1 km away</span><span>⏱ 12 min ago</span></div>
-          </div>
-          <span class="ri-sev high">HIGH</span>
-        </div>
-        <div class="report-item">
-          <div class="ri-badge" style="background:var(--amber)"></div>
-          <div class="ri-body">
-            <div class="ri-title">Power lines down — MG Road junction</div>
-            <div class="ri-meta"><span>📍 0.8 km away</span><span>⏱ 34 min ago</span></div>
-          </div>
-          <span class="ri-sev med">MED</span>
-        </div>
-        <div class="report-item">
-          <div class="ri-badge" style="background:var(--orange)"></div>
-          <div class="ri-body">
-            <div class="ri-title">Vehicle fire — Expressway KM 14</div>
-            <div class="ri-meta"><span>📍 5.4 km away</span><span>⏱ 1 hr ago</span></div>
-          </div>
-          <span class="ri-sev high">HIGH</span>
-        </div>
-        <div class="report-item">
-          <div class="ri-badge" style="background:var(--green)"></div>
-          <div class="ri-body">
-            <div class="ri-title">Stray animal rescue needed — Sector 7</div>
-            <div class="ri-meta"><span>📍 1.3 km away</span><span>⏱ 2 hr ago</span></div>
-          </div>
-          <span class="ri-sev low">LOW</span>
-        </div>
-      </div>
+      <div class="report-feed" id="reportFeed"><div style="color:var(--muted);font-size:0.85rem;padding:1rem">📡 Loading community reports...</div></div>
     </div>
   </div>
 </section>
@@ -1182,6 +1143,7 @@ margin-bottom:0.5rem;
   </div>
 </div>
 
+<script src="api.js"></script>
 <script>
 /* ─── TICKER ─── */
 const tickerData=[
@@ -1199,6 +1161,16 @@ const tt=document.getElementById('tickerTrack');
   tt.innerHTML+=`<div class="ticker-item"><div class="ticker-dot ${i.dot}"></div>${i.text}</div>`;
 });
 
+/* ─── WAKE UP RENDER BACKEND (free tier sleeps after 15min) ─── */
+fetch('https://safesignal-backend-sasp.onrender.com/api/chat', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'ping'})}).catch(()=>{});
+
+/* ─── NEARBY FILTER HELPER ─── */
+function filterNearby(btn, type){
+  document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(typeof loadNearby==='function') loadNearby(type);
+}
+
 /* ─── NAVIGATION ─── */
 function navigate(sec,el){
   document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
@@ -1210,6 +1182,8 @@ function navigate(sec,el){
     b.classList.toggle('active',b.dataset.section===sec);
   });
   window.scrollTo(0,0);
+  // Trigger nearby load when tab opens
+  if(sec==='nearby' && typeof initNearby==='function') initNearby();
 }
 
 /* ─── ACCORDION ─── */
@@ -1257,22 +1231,7 @@ function handleMedia(e){
   }
 }
 function submitReport(){
-  const title=document.getElementById('reportTitle').value.trim();
-  if(!title){alert('Please enter an incident title.');return;}
-  const feed=document.getElementById('reportFeed');
-  const colors={high:'var(--red)',med:'var(--amber)',low:'var(--green)'};
-  const html=`<div class="report-item" style="border-color:rgba(16,185,129,0.3)">
-    <div class="ri-badge" style="background:${colors[selSev]}"></div>
-    <div class="ri-body">
-      <div class="ri-title">${selType?selType+' — ':''}${title}</div>
-      <div class="ri-meta"><span>📍 Your location</span><span>⏱ Just now</span></div>
-    </div>
-    <span class="ri-sev ${selSev}">${selSev.toUpperCase()}</span>
-  </div>`;
-  feed.insertAdjacentHTML('afterbegin',html);
-  document.getElementById('reportTitle').value='';
-  document.getElementById('reportDesc').value='';
-  alert('✅ Report submitted! Nearby users and authorities have been alerted.');
+  submitReportToBackend();
 }
 
 /* ─── CHATBOT ─── */
@@ -1305,7 +1264,7 @@ function sendChat(){
   if(!val)return;
   appendMsg(val,'user');
   inp.value='';
-  setTimeout(()=>appendMsg(matchResponse(val),'bot'),700);
+  sendChatToBackend(val);
 }
 function sendSuggested(q){
   navigate('chatbot');
@@ -1315,30 +1274,13 @@ function sendSuggested(q){
 
 /* ─── CONTACTS ─── */
 function addContact(){
-  const n=document.getElementById('newName').value.trim();
-  const p=document.getElementById('newPhone').value.trim();
-  const r=document.getElementById('newRelation').value.trim();
-  if(!n||!p){alert('Name and phone are required.');return;}
-  const list=document.getElementById('contactsList');
-  const emojis=['👤','👨','👩','🧑','👦','👧'];
-  const emoji=emojis[Math.floor(Math.random()*emojis.length)];
-  list.insertAdjacentHTML('beforeend',`<div class="contact-card">
-    <div class="contact-avatar">${emoji}</div>
-    <div class="contact-info"><strong>${n}</strong><span>${p}${r?' · '+r:''}</span></div>
-    <div class="contact-actions">
-      <button class="icon-btn" onclick="window.open('tel:${p}')">📞</button>
-      <button class="icon-btn">💬</button>
-      <button class="icon-btn danger" onclick="this.closest('.contact-card').remove()">🗑</button>
-    </div>
-  </div>`);
-  document.getElementById('newName').value='';
-  document.getElementById('newPhone').value='';
-  document.getElementById('newRelation').value='';
+  addContactToBackend();
 }
 
 /* ─── SOS MODAL ─── */
 let sosTimer=null;let sosCount=3;
 function openSOS(){
+  triggerSOS();
   sosCount=3;
   document.getElementById('sosCountdown').textContent=sosCount;
   document.getElementById('sosCountText').textContent=sosCount+' seconds';
